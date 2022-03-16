@@ -1,0 +1,71 @@
+# -------------------------------------------------------------------------------------------------------------
+# ❤️ Use Compose Spec: https://www.compose-spec.io/ ❤️
+#
+# This file builds a containerized instance of Coral behind Traefik as a reverse proxy. Coral image is built
+# locally. The image for Traefik is pulled from the respective authorities on Docker Hub. The configuration and
+# user database is bind-mounted to the project root's data directory
+# -------------------------------------------------------------------------------------------------------------
+
+#----------------------------------------------------
+# ESTABLISH GATEWAY FOR NETWORK TRAFFIC TRAEFIK
+#----------------------------------------------------
+networks:
+  coral-erm:
+    internal: true
+  gateway:
+    external: true
+
+#----------------------------------------------------
+# USE DOCKER VOLUMES TO PERSIST DATA
+#----------------------------------------------------
+volumes:
+  db:
+    driver: local
+  reports:
+    driver: local
+
+#----------------------------------------------------
+# [STACK]
+#
+# Traefik - SSL Termination and Routing
+# Coral ERM - Multiservice Application Container
+#----------------------------------------------------
+services:
+  coral-app:
+    container_name: coral-app
+    image: dzoladz/coral:latest
+    restart: unless-stopped
+    volumes:
+      - reports:/usr/local/stats_reports
+      - db:/var/lib/mysql
+    labels:
+    #--------------------------------------------------------------------#
+    # Define the behavior and rules of Coral ERM w/ Traefik              #
+    #--------------------------------------------------------------------#
+      - "traefik.enable=true" # Enable traefik on this container
+      - "traefik.http.routers.coral.entrypoints=http" # Enable HTTP entrypoint for [coral]
+      - "traefik.http.routers.coral.rule=Host(`coral.derekzoladz.com`)" # Define HTTP host
+      - "traefik.http.routers.coral.middlewares=redirect" # Enforce HTTPS redirect
+      - "traefik.http.routers.coral-ssl.entrypoints=https" # Enable HTTPS entrypoint for [coral-ssl]
+      - "traefik.http.routers.coral-ssl.rule=Host(`coral.derekzoladz.com`)" # Define HTTPS host
+      ###- "traefik.http.routers.coral-ssl.tls.certresolver=letsencrypt" # Use Let's Encrypt
+      - "traefik.http.routers.coral-ssl.tls=true"
+    networks:
+      - coral-erm
+      - gateway
+
+  coral-db:
+    container_name: coral-db
+    image: mariadb:10.3.32
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: mariadb
+      MYSQL_DATABASE: mariadb
+      MYSQL_USER: mariadb
+      MYSQL_PASSWORD: mariadb
+    volumes:
+      - ./mariadb:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - coral-erm
